@@ -174,3 +174,6 @@ cython_debug/
 */settings.toml
 */device_keys.json
 */boot_out.txt
+
+# macOS
+.DS_Store
