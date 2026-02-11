@@ -67,20 +67,21 @@ STATUS_PIXEL_COLOR = 0x00FF00
 TICKER_COLOR = 0x6A0DAD
 TIME_COLOR = 0x6A0DAD
 
-# ------------------------- Subway Mode ----------------------------------------
-SUBWAY_MODE_ENABLED = True  # Set True to override Bitcoin view with subway arrivals
+# ------------------------- Transit Mode ----------------------------------------
+SUBWAY_MODE_ENABLED = True  # Set True to override Bitcoin view with transit arrivals
 
 SUBWAY_PROXY_BASE = os.getenv("SUBWAY_PROXY_BASE", "")
 SUBWAY_REFRESH_INTERVAL = 30  # seconds between API fetches
-SUBWAY_DIRECTION_TOGGLE = 5.0  # seconds between N/S view swap
 SUBWAY_LINE_CYCLE = 10.0  # seconds per line before advancing
-# Lines to display — comma-separated in settings.toml, e.g. "A,C,B,D,2,3"
+# Lines to display — comma-separated in settings.toml, e.g. "A,B,C,D,M7,M10"
 _subway_lines_str = os.getenv("SUBWAY_LINES", "")
 SUBWAY_LINES = (
     [s.strip() for s in _subway_lines_str.split(",") if s.strip()]
     if _subway_lines_str
     else []
 )
+# Track which lines are buses (set from API response "type" field)
+_transit_line_types = {}  # e.g. {"A": "subway", "M7": "bus"}
 
 # Full MTA color map — covers all lines so any station config works
 SUBWAY_COLORS = {
@@ -108,76 +109,93 @@ SUBWAY_COLORS = {
     "W": 0xFCCC0A,  # Yellow
     "S": 0x808183,  # Shuttle Gray
 }
+# Bus routes use blue background with white text
+BUS_COLOR = 0x0039A6  # MTA bus blue
 # Single-line layout: one line uses the full 64x32 display
 SUBWAY_CIRCLE_X = 3  # circle bitmap top-left x
 SUBWAY_CIRCLE_Y = 7  # circle bitmap top-left y
-# Hand-crafted 19x19 circle bitmap — no stray edge pixels
+# Hand-crafted circle bitmap padded to 21x19 (centered, 1px padding each side)
 SUBWAY_CIRCLE_BMP = [
-    [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],  # row 0:  9 wide
-    [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],  # row 1: 13 wide
-    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # row 2: 15 wide
-    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 3: 17 wide
-    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 4: 17 wide
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 5: 19 wide
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 6
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 7
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 8
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 9 (center)
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 10
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 11
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 12
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  # row 13
-    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 14
-    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 15
-    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # row 16
-    [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],  # row 17
-    [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0],  # row 18
+    [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],  # row 0
+    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # row 1
+    [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],  # row 2
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # row 3
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # row 4
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 5
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 6
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 7
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 8
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 9
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 10
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 11
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 12
+    [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # row 13
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # row 14
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # row 15
+    [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],  # row 16
+    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],  # row 17
+    [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],  # row 18
+]
+# 21x19 filled square bitmap for bus routes (wider to fit "M10")
+BUS_SQUARE_BMP = [
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ]
 SUBWAY_LABEL_FONT = "/fonts/Arial-Bold-12.bdf"  # bold line letter inside circle
+BUS_LABEL_FONT = "/fonts/4x6-lean.bdf"  # compact font for bus route labels (M7, M10)
 SUBWAY_TIME_FONT = "/fonts/5x8-lean.bdf"  # arrival times (compact, won't overflow)
 SUBWAY_TIME_X = 26  # arrival time text x-origin
 SUBWAY_TIME_Y = 15  # arrival time text y-origin (vertically centered on 32px)
-# Per-character offsets to center label in circle — letters vs numbers differ in width
+# Per-character offsets to center label in shape — letters vs numbers differ in width
 # Arial-Bold: FONT_ASCENT=15, glyph height=12, widths vary by char
 SUBWAY_LABEL_OFFSETS = {
-    "A": (7, 2),
-    "B": (7, 2),
-    "C": (7, 2),
-    "D": (7, 2),
-    "E": (7, 2),
-    "F": (7, 2),
-    "G": (7, 2),
-    "J": (7, 2),
-    "L": (7, 2),
-    "M": (7, 2),
-    "N": (7, 2),
-    "Q": (7, 2),
-    "R": (7, 2),
-    "S": (7, 2),
-    "W": (7, 2),
-    "Z": (7, 2),
-    "1": (8, 2),
-    "2": (8, 2),
-    "3": (8, 3),
-    "4": (8, 2),
-    "5": (8, 2),
-    "6": (8, 2),
-    "7": (8, 2),
+    "A": (8, 2),
+    "B": (8, 2),
+    "C": (8, 2),
+    "D": (8, 2),
+    "E": (8, 2),
+    "F": (8, 2),
+    "G": (8, 2),
+    "J": (8, 2),
+    "L": (8, 2),
+    "M": (8, 2),
+    "N": (8, 2),
+    "Q": (8, 2),
+    "R": (8, 2),
+    "S": (8, 2),
+    "W": (8, 2),
+    "Z": (8, 2),
+    "1": (9, 2),
+    "2": (9, 2),
+    "3": (9, 3),
+    "4": (9, 2),
+    "5": (9, 2),
+    "6": (9, 2),
+    "7": (9, 2),
 }
-# Arrow polygon: same position for both directions, just different shape
-SUBWAY_ARROW_X = 28  # arrow x position
-SUBWAY_ARROW_Y = 4  # arrow y position (same for both directions)
-# Bitmap arrow patterns (5 wide x 3 tall), 1 = lit pixel
-SUBWAY_ARROW_UP = [
-    [0, 0, 1, 0, 0],
-    [0, 1, 1, 1, 0],
-    [1, 1, 1, 1, 1],
-]
-SUBWAY_ARROW_DN = [
-    [1, 1, 1, 1, 1],
-    [0, 1, 1, 1, 0],
-    [0, 0, 1, 0, 0],
-]
+# Bus number offsets — centered in 21x19 square using Arial-Bold-12
+# Positions are absolute screen coords (box starts at SUBWAY_CIRCLE_X=3, SUBWAY_CIRCLE_Y=7)
+BUS_NUMBER_OFFSETS = {
+    "M7": (9, 2),  # "7" centered in box
+    "M10": (4, 2),  # "10" centered in box
+}
 
 if SUBWAY_MODE_ENABLED:
     import displayio
@@ -200,21 +218,19 @@ last_displayed_block_height = None
 last_displayed_moscow_time = None
 ticker_message = None
 
-# Subway mode state
+# Transit mode state
 subway_time_index = None  # text layer index for arrival time
-subway_label_index = None  # text layer index for line letter
-subway_circle_ref = None  # circle TileGrid reference
-subway_arrow_ref = None  # arrow TileGrid reference
-_subway_circle_bmp = None  # reusable circle bitmap
-_subway_circle_pal = None  # reusable circle palette
-_subway_arrow_bmp = None  # reusable arrow bitmap
+subway_label_index = None  # text layer index for subway line label (bold font)
+bus_label_index = None  # text layer index for bus route label (compact font)
+subway_circle_ref = None  # shape TileGrid reference (circle or square)
+_subway_circle_bmp = None  # reusable shape bitmap
+_subway_circle_pal = None  # reusable shape palette
 _subway_initialized = False  # True after first display setup
-subway_arrivals_n = []  # cached northbound arrivals
-subway_arrivals_s = []  # cached southbound arrivals
-subway_current_dir = "N"  # currently displayed direction
+_subway_current_shape = None  # "circle" or "square" — tracks current shape type
+
+subway_arrivals_s = []  # cached southbound arrivals (downtown only)
 subway_current_line = 0  # index into SUBWAY_LINES
-last_direction_toggle = 0.0
-last_line_cycle = 0.0
+last_line_cycle = time.monotonic()
 
 api_current_base_url = "https://api.blocktron.io/api:2Pxae5kP/live_data_new"
 api_current_ticker_url = "https://api.blocktron.io/api:2Pxae5kP/live_data_ticker_new"
@@ -806,41 +822,65 @@ def ota_download_stage_if_needed():
 # -----------------------------------------------------------------------------
 
 
-def _make_arrow_tilegrid(pattern):
-    """Create a displayio TileGrid from a bitmap arrow pattern, storing bitmap for reuse."""
-    global _subway_arrow_bmp
-    h = len(pattern)
-    w = len(pattern[0])
-    _subway_arrow_bmp = displayio.Bitmap(w, h, 2)
-    pal = displayio.Palette(2)
-    pal.make_transparent(0)
-    pal[1] = dim_color(0xFFFFFF, GLOBAL_DIM_LEVEL)
-    for row in range(h):
-        for col in range(w):
-            _subway_arrow_bmp[col, row] = pattern[row][col]
-    return displayio.TileGrid(
-        _subway_arrow_bmp, pixel_shader=pal, x=SUBWAY_ARROW_X, y=SUBWAY_ARROW_Y
-    )
+def _is_bus_line(line_name):
+    """Check if a line is a bus route based on API response type data."""
+    return _transit_line_types.get(line_name) == "bus"
+
+
+def _get_shape_bitmap(line_name):
+    """Return the appropriate shape bitmap data (circle for subway, square for bus)."""
+    if _is_bus_line(line_name):
+        return BUS_SQUARE_BMP
+    return SUBWAY_CIRCLE_BMP
+
+
+def _get_shape_type(line_name):
+    """Return 'square' for bus, 'circle' for subway."""
+    return "square" if _is_bus_line(line_name) else "circle"
+
+
+def _get_shape_color(line_name):
+    """Return the shape background color for a line."""
+    if _is_bus_line(line_name):
+        return dim_color(BUS_COLOR, GLOBAL_DIM_LEVEL)
+    return dim_color(SUBWAY_COLORS.get(line_name, 0xFFFFFF), GLOBAL_DIM_LEVEL)
+
+
+def _update_label(label_idx, text, lx, ly):
+    """Reposition and update a text label, removing the old one from splash first."""
+    text_entry = matrixportal._text[label_idx]
+    old_label = text_entry.get("label")
+    if old_label is not None:
+        for i in range(len(matrixportal.splash) - 1, 0, -1):
+            if matrixportal.splash[i] is old_label:
+                matrixportal.splash.pop(i)
+                break
+        text_entry["label"] = None
+    text_entry["position"] = (lx, ly)
+    matrixportal.set_text(text, label_idx)
 
 
 def subway_setup_display():
-    """Clear the Bitcoin display and set up single-line subway layout.
+    """Clear the Bitcoin display and set up single-line transit layout.
 
-    Bitmap objects (circle, arrow) are created once and reused.
-    Text layers (label, time) are also created once via add_text() and
-    updated in place via set_text() — the _text list never grows after init.
-    Label repositioning is done by updating the stored position and
-    nullifying the label so set_text() rebuilds it at the new coords.
+    Bitmap object (21x19) is created once and reused for both circle and square
+    by rewriting pixels in place. Two label text layers are created at init —
+    one with bold font (subway) and one with compact font (bus). Only one is
+    visible at a time; the other is set to blank.
     """
-    global subway_time_index, subway_label_index, subway_circle_ref, subway_arrow_ref
+    global subway_time_index, subway_label_index, bus_label_index, subway_circle_ref
     global _subway_circle_bmp, _subway_circle_pal, _subway_initialized
+    global _subway_current_shape
 
     # Clear all 6 Bitcoin text layers
     for i in range(6):
         matrixportal.set_text("", i)
 
     line_name = SUBWAY_LINES[subway_current_line]
-    color = dim_color(SUBWAY_COLORS[line_name], GLOBAL_DIM_LEVEL)
+    is_bus = _is_bus_line(line_name)
+    color = _get_shape_color(line_name)
+    shape_type = _get_shape_type(line_name)
+    shape_bmp_data = _get_shape_bitmap(line_name)
 
     if not _subway_initialized:
         # First-time setup: create all objects once
@@ -849,16 +889,16 @@ def subway_setup_display():
         while len(matrixportal.splash) > 1:
             matrixportal.splash.pop()
 
-        # Hand-crafted circle bitmap (created once, reused via palette swap)
-        h = len(SUBWAY_CIRCLE_BMP)
-        w = len(SUBWAY_CIRCLE_BMP[0])
+        # Shape bitmap (21x19, created once, reused via palette swap and pixel rewrite)
+        h = len(shape_bmp_data)
+        w = len(shape_bmp_data[0])
         _subway_circle_bmp = displayio.Bitmap(w, h, 2)
         _subway_circle_pal = displayio.Palette(2)
         _subway_circle_pal.make_transparent(0)
         _subway_circle_pal[1] = color
         for row in range(h):
             for col in range(w):
-                _subway_circle_bmp[col, row] = SUBWAY_CIRCLE_BMP[row][col]
+                _subway_circle_bmp[col, row] = shape_bmp_data[row][col]
         subway_circle_ref = displayio.TileGrid(
             _subway_circle_bmp,
             pixel_shader=_subway_circle_pal,
@@ -866,20 +906,30 @@ def subway_setup_display():
             y=SUBWAY_CIRCLE_Y,
         )
         matrixportal.splash.append(subway_circle_ref)
+        _subway_current_shape = shape_type
 
-        # Direction arrow bitmap (created once, reused via pixel rewrite)
-        pattern = SUBWAY_ARROW_UP if subway_current_dir == "N" else SUBWAY_ARROW_DN
-        subway_arrow_ref = _make_arrow_tilegrid(pattern)
-        matrixportal.splash.append(subway_arrow_ref)
-
-        # Line letter label — created once, indices reused forever
-        lx, ly = SUBWAY_LABEL_OFFSETS[line_name]
+        # Bold label (Arial-Bold-12) — subway letter, or bus route number
+        if is_bus:
+            slx, sly = BUS_NUMBER_OFFSETS.get(line_name, (9, 2))
+            bold_text = line_name[1:]  # e.g. "7" or "10"
+        else:
+            slx, sly = SUBWAY_LABEL_OFFSETS.get(line_name, (8, 2))
+            bold_text = line_name
         subway_label_index = matrixportal.add_text(
-            text_position=(lx, ly),
+            text_position=(slx, sly),
             text_color=dim_color(0xFFFFFF, GLOBAL_DIM_LEVEL),
             text_font=SUBWAY_LABEL_FONT,
             is_data=True,
-            text=line_name,
+            text=bold_text,
+        )
+
+        # Compact label (4x6-lean) — unused now, kept as blank placeholder
+        bus_label_index = matrixportal.add_text(
+            text_position=(4, 14),
+            text_color=dim_color(0xFFFFFF, GLOBAL_DIM_LEVEL),
+            text_font=BUS_LABEL_FONT,
+            is_data=True,
+            text="",
         )
 
         # Arrival time — created once, index reused forever
@@ -893,112 +943,108 @@ def subway_setup_display():
 
         _subway_initialized = True
     else:
-        # Subsequent calls: zero new allocations
+        # Subsequent calls: minimal allocations
 
-        # Update circle color
+        # If shape type changed (circle <-> square), rewrite bitmap pixels
+        if shape_type != _subway_current_shape:
+            h = len(shape_bmp_data)
+            w = len(shape_bmp_data[0])
+            for row in range(h):
+                for col in range(w):
+                    _subway_circle_bmp[col, row] = shape_bmp_data[row][col]
+            _subway_current_shape = shape_type
+
+        # Update shape color
         _subway_circle_pal[1] = color
 
-        # Reposition label: remove old label from splash, update stored position,
-        # then set_text() will rebuild and re-append it at the new position
-        lx, ly = SUBWAY_LABEL_OFFSETS[line_name]
-        text_entry = matrixportal._text[subway_label_index]
-        old_label = text_entry.get("label")
-        if old_label is not None:
-            for i in range(len(matrixportal.splash) - 1, 0, -1):
-                if matrixportal.splash[i] is old_label:
-                    matrixportal.splash.pop(i)
-                    break
-            text_entry["label"] = None
-        text_entry["position"] = (lx, ly)
-        matrixportal.set_text(line_name, subway_label_index)
+        # Show the appropriate label in the bold slot
+        if is_bus:
+            nlx, nly = BUS_NUMBER_OFFSETS.get(line_name, (9, 2))
+            _update_label(subway_label_index, line_name[1:], nlx, nly)
+        else:
+            slx, sly = SUBWAY_LABEL_OFFSETS.get(line_name, (8, 2))
+            _update_label(subway_label_index, line_name, slx, sly)
+        # Compact slot always blank (no "M" prefix)
+        _update_label(bus_label_index, "", 4, 14)
 
         # Clear and re-set arrival time (position doesn't change)
         matrixportal.set_text("", subway_time_index)
 
     gc.collect()
-    timed_print(f"Subway display: {line_name} (mem: {gc.mem_free()} bytes)")
+    timed_print(
+        f"Transit display: {line_name} ({shape_type}) (mem: {gc.mem_free()} bytes)"
+    )
 
 
 def subway_cycle_line():
     """Advance to the next line with data, rebuild display."""
     global subway_current_line
+    original = subway_current_line
     # Try each line in order, skip lines with no arrival data
     for _ in range(len(SUBWAY_LINES)):
-        subway_current_line = (subway_current_line + 1) % len(SUBWAY_LINES)
+        candidate = (subway_current_line + 1) % len(SUBWAY_LINES)
+        subway_current_line = candidate
         line_name = SUBWAY_LINES[subway_current_line]
         if _subway_line_has_data(line_name):
             break
+    else:
+        # No lines have data — stay on current line
+        subway_current_line = original
     # Rebuild display for the new line (handles per-char centering)
     subway_setup_display()
 
 
 def _subway_line_has_data(line_name):
-    """Check if a line has any arrival data in either direction."""
-    return _subway_dir_has_data(line_name, "N") or _subway_dir_has_data(line_name, "S")
-
-
-def _subway_dir_has_data(line_name, direction):
-    """Check if a line has arrival data for a specific direction."""
-    arrivals = subway_arrivals_n if direction == "N" else subway_arrivals_s
-    for entry in arrivals:
+    """Check if a line has any arrival data (downtown/southbound only)."""
+    for entry in subway_arrivals_s:
         if entry["line"] == line_name and len(entry.get("mins", [])) > 0:
             return True
     return False
 
 
-def subway_update_arrow():
-    """Update the arrow bitmap in place for the current direction."""
-    pattern = SUBWAY_ARROW_UP if subway_current_dir == "N" else SUBWAY_ARROW_DN
-    # Rewrite pixels in the stored bitmap (no new allocations)
-    h = len(pattern)
-    w = len(pattern[0])
-    for row in range(h):
-        for col in range(w):
-            _subway_arrow_bmp[col, row] = pattern[row][col]
-
-
 def subway_fetch_arrivals():
-    """Fetch arrival data for both directions from the proxy server."""
-    global subway_arrivals_n, subway_arrivals_s, api_failure_count
+    """Fetch arrival data (downtown/southbound only) from the proxy server."""
+    global subway_arrivals_s, api_failure_count, _transit_line_types
 
-    for direction in ("N", "S"):
-        try:
-            url = f"{SUBWAY_PROXY_BASE}?direction={direction}"
-            response = matrixportal.network.requests.get(url, timeout=10)
-            if response.status_code != 200:
-                timed_print(f"Subway proxy err ({direction}):", response.status_code)
-                response.close()
-                continue
-            data = response.json()
+    try:
+        url = SUBWAY_PROXY_BASE
+        response = matrixportal.network.requests.get(url, timeout=10)
+        if response.status_code != 200:
+            timed_print("Transit proxy err:", response.status_code)
             response.close()
-            arrivals = data.get("arrivals", [])
-            if direction == "N":
-                subway_arrivals_n = arrivals
-            else:
-                subway_arrivals_s = arrivals
-            api_failure_count = 0
-            timed_print(f"Subway data fetched ({direction})")
-            gc.collect()
-        except Exception as e:
-            timed_print(f"Subway fetch err ({direction}):", e)
-            api_failure_count += 1
-            if api_failure_count >= device_max_failures_before_reboot:
-                timed_print("Exceeded subway API errors, rebooting...")
-                microcontroller.reset()
-            try:
-                response.close()
-            except Exception:
-                pass
+            return
+        data = response.json()
+        response.close()
+        arrivals = data.get("arrivals", [])
+        subway_arrivals_s = arrivals
+        # Update line type map from API response
+        for entry in arrivals:
+            line = entry.get("line", "")
+            ltype = entry.get("type", "subway")
+            if line:
+                _transit_line_types[line] = ltype
+        api_failure_count = 0
+        timed_print("Transit data fetched (S)")
+        gc.collect()
+    except Exception as e:
+        timed_print("Transit fetch err:", e)
+        api_failure_count += 1
+        if api_failure_count >= device_max_failures_before_reboot:
+            timed_print("Exceeded transit API errors, rebooting...")
+            microcontroller.reset()
+        try:
+            response.close()
+        except Exception:
+            pass
 
 
 def subway_update_display():
-    """Update the arrival time text for the current line and direction."""
-    arrivals = subway_arrivals_n if subway_current_dir == "N" else subway_arrivals_s
+    """Update the arrival time text for the current line (downtown only)."""
     line_name = SUBWAY_LINES[subway_current_line]
 
     # Find arrival times for current line
     mins = []
-    for entry in arrivals:
+    for entry in subway_arrivals_s:
         if entry["line"] == line_name:
             mins = entry.get("mins", [])
             break
@@ -1019,7 +1065,11 @@ ota_download_stage_if_needed()
 # Initialize subway mode if enabled
 if SUBWAY_MODE_ENABLED:
     subway_setup_display()
-    timed_print("Subway mode initialized")
+    subway_fetch_arrivals()
+    subway_update_display()
+    last_data_fetch = time.monotonic()
+    last_line_cycle = time.monotonic()
+    timed_print("Transit mode initialized (downtown only)")
 
 # -----------------------------------------------------------------------------
 #                                   MAIN LOOP
@@ -1027,9 +1077,9 @@ if SUBWAY_MODE_ENABLED:
 while True:
     current_time = time.monotonic()
 
-    # ---- Subway Mode ----
+    # ---- Transit Mode (downtown/southbound only) ----
     if SUBWAY_MODE_ENABLED:
-        # Fetch both directions every SUBWAY_REFRESH_INTERVAL seconds
+        # Fetch southbound arrivals every SUBWAY_REFRESH_INTERVAL seconds
         if current_time - last_data_fetch >= SUBWAY_REFRESH_INTERVAL:
             subway_fetch_arrivals()
             subway_update_display()
@@ -1038,26 +1088,8 @@ while True:
         # Cycle to next line every SUBWAY_LINE_CYCLE seconds
         if current_time - last_line_cycle >= SUBWAY_LINE_CYCLE:
             subway_cycle_line()
-            line_name = SUBWAY_LINES[subway_current_line]
-            # Start on whichever direction has data (prefer N)
-            if _subway_dir_has_data(line_name, "N"):
-                subway_current_dir = "N"
-            else:
-                subway_current_dir = "S"
-            subway_update_arrow()
-            last_direction_toggle = current_time
             subway_update_display()
             last_line_cycle = current_time
-
-        # Toggle between Uptown/Downtown views (skip if no data for that direction)
-        if current_time - last_direction_toggle >= SUBWAY_DIRECTION_TOGGLE:
-            line_name = SUBWAY_LINES[subway_current_line]
-            other_dir = "S" if subway_current_dir == "N" else "N"
-            if _subway_dir_has_data(line_name, other_dir):
-                subway_current_dir = other_dir
-                subway_update_arrow()
-                subway_update_display()
-            last_direction_toggle = current_time
 
         # Keep settings and OTA running
         if current_time - last_settings_fetch >= api_settings_refresh_interval:
