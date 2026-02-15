@@ -228,6 +228,14 @@ _subway_circle_pal = None  # reusable shape palette
 _subway_initialized = False  # True after first display setup
 _subway_current_shape = None  # "circle" or "square" — tracks current shape type
 
+transit_clock_index = None  # text layer index for transit mode clock
+last_transit_clock_update = time.monotonic()
+TRANSIT_CLOCK_UPDATE_INTERVAL = 5  # seconds between clock refreshes
+TRANSIT_CLOCK_COLOR = 0x6A0DAD  # purple clock text
+TRANSIT_CLOCK_FONT = "/fonts/4x6-lean.bdf"
+TRANSIT_CLOCK_X = 44  # top-right x position
+TRANSIT_CLOCK_Y = 2  # top-right, nudged down to avoid clipping
+
 subway_arrivals_s = []  # cached southbound arrivals (downtown only)
 subway_current_line = 0  # index into SUBWAY_LINES
 last_line_cycle = time.monotonic()
@@ -653,6 +661,25 @@ def update_time_display(force=False):
         timed_print(f"Time Update Error: {e}")
 
 
+def update_transit_clock():
+    """Update the transit mode clock with local time in 12hr AM/PM format."""
+    global transit_clock_index
+    if transit_clock_index is None:
+        return
+    try:
+        local_time = get_local_time_struct()
+        hour = local_time.tm_hour
+        minute = local_time.tm_min
+        if hour == 0:
+            hour = 12
+        elif hour > 12:
+            hour -= 12
+        formatted = f"{hour}:{minute:02d}"
+        matrixportal.set_text(formatted, transit_clock_index)
+    except Exception as e:
+        timed_print(f"Transit clock error: {e}")
+
+
 def maybe_collect_garbage(current_time):
     global last_gc_check
     if current_time - last_gc_check >= GC_CHECK_INTERVAL:
@@ -870,7 +897,7 @@ def subway_setup_display():
     """
     global subway_time_index, subway_label_index, bus_label_index, subway_circle_ref
     global _subway_circle_bmp, _subway_circle_pal, _subway_initialized
-    global _subway_current_shape
+    global _subway_current_shape, transit_clock_index
 
     # Clear all 6 Bitcoin text layers
     for i in range(6):
@@ -937,6 +964,15 @@ def subway_setup_display():
             text_position=(SUBWAY_TIME_X, SUBWAY_TIME_Y),
             text_color=dim_color(0xFFFFFF, GLOBAL_DIM_LEVEL),
             text_font=SUBWAY_TIME_FONT,
+            is_data=True,
+            text="",
+        )
+
+        # Local clock in top-right corner (AM/PM format)
+        transit_clock_index = matrixportal.add_text(
+            text_position=(TRANSIT_CLOCK_X, TRANSIT_CLOCK_Y),
+            text_color=dim_color(TRANSIT_CLOCK_COLOR, GLOBAL_DIM_LEVEL),
+            text_font=TRANSIT_CLOCK_FONT,
             is_data=True,
             text="",
         )
@@ -1067,8 +1103,10 @@ if SUBWAY_MODE_ENABLED:
     subway_setup_display()
     subway_fetch_arrivals()
     subway_update_display()
+    update_transit_clock()
     last_data_fetch = time.monotonic()
     last_line_cycle = time.monotonic()
+    last_transit_clock_update = time.monotonic()
     timed_print("Transit mode initialized (downtown only)")
 
 # -----------------------------------------------------------------------------
@@ -1090,6 +1128,11 @@ while True:
             subway_cycle_line()
             subway_update_display()
             last_line_cycle = current_time
+
+        # Update local clock in top-right corner
+        if current_time - last_transit_clock_update >= TRANSIT_CLOCK_UPDATE_INTERVAL:
+            update_transit_clock()
+            last_transit_clock_update = current_time
 
         # Keep settings and OTA running
         if current_time - last_settings_fetch >= api_settings_refresh_interval:
